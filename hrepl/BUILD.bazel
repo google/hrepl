@@ -1,0 +1,62 @@
+load("@rules_haskell//haskell:defs.bzl", "haskell_binary", "haskell_library", "haskell_test")
+
+haskell_binary(
+    name = "hrepl",
+    srcs = [
+        "BuildOutput.hs",
+        "RuleInfo.hs",
+        "Repl.hs",
+        "repl_main.hs",
+    ],
+    compiler_flags = ["-XScopedTypeVariables"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":ModuleName",
+        "//:bazel",
+        "//proto:rule_info_haskell_proto",
+        "@stackage//:base",
+        "@stackage//:bytestring",
+        "@stackage//:containers",
+        "@stackage//:directory",
+        "@stackage//:filepath",
+        "@stackage//:microlens",
+        "@stackage//:optparse-applicative",
+        "@stackage//:process",
+        "@stackage//:proto-lens",
+        "@stackage//:temporary",
+        "@stackage//:text",
+        "@stackage//:unix",
+    ],
+)
+
+haskell_library(
+    name = "ModuleName",
+    srcs = ["ModuleName.hs"],
+    compiler_flags = ["-XScopedTypeVariables"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@stackage//:Cabal",
+        "@stackage//:base",
+        "@stackage//:bytestring",
+        "@stackage//:filepath",
+        "@stackage//:haskell-src-exts",
+        "@stackage//:text",
+    ],
+)
+
+haskell_test(
+    name = "ModuleNameTest",
+    srcs = ["ModuleNameTest.hs"],
+    deps = [
+        ":ModuleName",
+        "@stackage//:HUnit",
+        "@stackage//:base",
+        "@stackage//:bytestring",
+        "@stackage//:haskell-src-exts",
+        "@stackage//:hspec-expectations",
+        "@stackage//:test-framework",
+        "@stackage//:test-framework-hunit",
+    ],
+)
+
+

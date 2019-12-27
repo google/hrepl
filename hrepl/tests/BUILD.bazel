@@ -1,0 +1,709 @@
+# This directory contains tests of the hrepl command-line tool.
+#
+# To run the tests locally:
+#
+#   bazel test -j 4 --test_env=PATH --run_under="env HREPL_TEST_CLIENT=$PWD" hrepl/tests:hrepl_tests
+
+load("@rules_haskell//haskell:defs.bzl", "haskell_binary", "haskell_library", "ghc_plugin")
+load("@rules_haskell//haskell:protobuf.bzl", "haskell_proto_library")
+load(":test.bzl", "hrepl_test")
+
+# Tags to avoid automatically building certain test targets which intentionally
+# don't build.
+DO_NOT_BUILD = [
+    "manual",
+]
+
+haskell_library(
+    name = "ReplTestLib",
+    testonly = 1,
+    srcs = ["ReplTestLib.hs"],
+    data = [
+        "//hrepl",
+    ],
+    deps = [
+        "//:bazel",
+        "@rules_haskell//tools/runfiles",
+        "@stackage//:HUnit",
+        "@stackage//:base",
+        "@stackage//:filepath",
+        "@stackage//:process",
+        "@stackage//:strict",
+        "@stackage//:temporary",
+    ],
+)
+
+haskell_binary(
+    name = "hrepl_test_binary",
+    testonly = True,
+    srcs = ["hrepl_test_binary.hs"],
+    deps = [
+        ":ReplTestLib",
+        "@stackage//:base",
+        "@stackage//:optparse-applicative",
+        "@stackage//:test-framework",
+        "@stackage//:test-framework-hunit",
+    ],
+)
+
+hrepl_test(
+    name = "empty_test",
+    commands = ["appendFile {OUT} \"OK\""],
+    expected_output = "OK",
+)
+
+haskell_binary(
+    name = "Basic",
+    srcs = ["Basic.hs"],
+    deps = ["@stackage//:base"],
+)
+
+hrepl_test(
+    name = "basic_test",
+    test_args = ["//hrepl/tests:Basic"],
+    commands = [":main {OUT}"],
+    expected_output = "OK",
+)
+
+# Pass "-fobject-code", which checks that ghc invokes clang correctly.
+hrepl_test(
+    name = "object_code_test",
+    test_args = [
+        "-fobject-code",
+        "//hrepl/tests:Basic",
+    ],
+    commands = [":main {OUT}"],
+    expected_output = "OK",
+)
+
+haskell_binary(
+    name = "Binary",
+    srcs = ["Binary.hs"],
+    deps = [
+        ":Library",
+        "@stackage//:base",
+    ],
+)
+
+haskell_library(
+    name = "Library",
+    srcs = ["Library.hs"],
+    deps = ["@stackage//:base"],
+)
+
+hrepl_test(
+    name = "binary_and_library",
+    test_args = [
+        "//hrepl/tests:Binary",
+        "//hrepl/tests:Library",
+    ],
+    commands = [
+        ":main {OUT}",
+        # Confirms that unexported Library symbols are available.
+        ":m *Library",
+        "appendFile {OUT} unexported",
+    ],
+    # Printed twice, once by main and then appended directly.
+    expected_output = "OKOK",
+)
+
+# Two modules with internal, unexported functions that conflict.
+# hrepl will expose definitions from one of them.  Unfortunately, it's not
+# predictable *which* one is chosen, but we want to make sure at least *one* is.
+haskell_library(
+    name = "Internal1",
+    srcs = ["Internal1.hs"],
+    deps = [
+        "@stackage//:base",
+    ],
+)
+
+haskell_library(
+    name = "Internal2",
+    srcs = ["Internal2.hs"],
+    deps = [
+        "@stackage//:base",
+    ],
+)
+
+hrepl_test(
+    name = "internal_conflict_test",
+    test_args = [
+        "//hrepl/tests:Internal1",
+        "//hrepl/tests:Internal2",
+    ],
+    commands = [
+        "appendFile {OUT} exported1",
+        "appendFile {OUT} exported2",
+        # Check that ghci exposes *one* of the modules' internals, but not both.
+        # Each modules defines the name internally, so exposing both would
+        # make this call ambiguous.  And this test doesn't care which one is used,
+        # because they have the same value ("OK").
+        "appendFile {OUT} unexported",
+        # The behavior should persist across a reload:
+        ":reload",
+        "appendFile {OUT} exported1",
+        "appendFile {OUT} exported2",
+        "appendFile {OUT} unexported",
+    ],
+    expected_output = "OK1OK2OKOK1OK2OK",
+)
+
+haskell_library(
+    name = "Chain1",
+    srcs = ["Chain1.hs"],
+    compiler_flags = ["-w"],
+    version = "1.0",  # Gives a more readable package name
+    deps = ["@stackage//:base"],
+)
+
+haskell_library(
+    name = "Chain2",
+    srcs = ["Chain2.hs"],
+    compiler_flags = ["-w"],
+    deps = [
+        ":Chain1",
+        "@stackage//:base",
+    ],
+)
+
+haskell_library(
+    name = "Chain3",
+    srcs = ["Chain3.hs"],
+    compiler_flags = ["-w"],
+    deps = [
+        ":Chain2",
+        "@stackage//:base",
+    ],
+)
+
+hrepl_test(
+    name = "chain_of_three_test",
+    test_args = [
+        "//hrepl/tests:Chain1",
+        # Chain2 is in the middle, but not listed
+        "//hrepl/tests:Chain3",
+    ],
+    commands = [
+        ":m Chain1 Chain2 Chain3",
+        "chain1 {OUT}",
+        "chain2 {OUT}",
+        "chain3 {OUT}",
+    ],
+    expected_output = "123",  # Each of chain* adds its number.
+)
+
+haskell_library(
+    name = "Chain2Conflict",
+    srcs = ["Chain2Conflict.hs"],
+    compiler_flags = ["-w"],
+    deps = [
+        ":Chain1",
+        "@stackage//:base",
+    ],
+)
+
+haskell_library(
+    name = "Chain3Alternate",
+    srcs = ["Chain3Alternate.hs"],
+    compiler_flags = ["-w"],
+    deps = [
+        ":Chain2Conflict",
+        "@stackage//:base",
+    ],
+)
+
+hrepl_test(
+    name = "implicit_not_imported_test",
+    test_args = [
+        "//hrepl/tests:Chain1",
+        # Chain2Conflict is in the middle, but not listed
+        "//hrepl/tests:Chain3Alternate",
+    ],
+    commands = [
+        # Chain1 and Chain3Alternate should be imported. Chain2Conflict
+        # must not be imported, or else its exported symbol will conflict
+        # with Chain1.
+        "chain1 {OUT}",
+        "chain3 {OUT}",
+    ],
+    expected_output = "13",
+)
+
+hrepl_test(
+    name = "multiple_libraries_in_scope_test",
+    test_args = [
+        "//hrepl/tests:Library",
+        "//hrepl/tests:Chain1",
+    ],
+    commands = ["root libraryFunction {OUT}"],
+    expected_output = "OK",
+)
+
+hrepl_test(
+    name = "two_mutually_independent_test",
+    test_args = [
+        "//hrepl/tests:Library",
+        "//hrepl/tests:Chain1",
+    ],
+    commands = [
+        ":m *Library *Chain1",
+        "appendFile {OUT} unexported",
+        "chain1 {OUT}",
+    ],
+    expected_output = "OK1",  # The outputs from both, appended together.
+)
+
+hrepl_test(
+    name = "package_flag_redundant_test",
+    test_args = [
+        # Chain1 is not imported directly.
+        # The use of the --package flag is redundant because
+        # Chain1 is already available as a dependency of Chain3.
+        "--package",
+        "//hrepl/tests:Chain1",
+        # Not a library; should be ignored:
+        "--package",
+        "//hrepl/tests:Basic",
+        "//hrepl/tests:Chain3",
+    ],
+    commands = [
+        ":m Chain1 Chain2 Chain3",
+        "chain1 {OUT}",
+        "chain2 {OUT}",
+        "chain3 {OUT}",
+    ],
+    expected_output = "123",
+)
+
+# Checks that dependencies can be loaded into hrepl.
+hrepl_test(
+    name = "exposed_dependency_test",
+    test_args = [
+        "//hrepl/tests:Chain3",
+    ],
+    commands = [
+        ":m Chain1 Chain2 Chain3",
+        "chain1 {OUT}",
+        "chain2 {OUT}",
+        "chain3 {OUT}",
+    ],
+    expected_output = "123",
+)
+
+haskell_library(
+    name = "Chain1Dupe",
+    # Located in a subdirectory so it can have the same module name as Chain1
+    # by following the longest-suffix rule.
+    srcs = ["dupes/Chain1.hs"],
+    version = "1.0",  # Gives a more readable package name
+    deps = ["@stackage//:base"],
+)
+
+haskell_library(
+    name = "Chain2Dupe",
+    srcs = ["Chain2Dupe.hs"],
+    deps = [
+        ":Chain1Dupe",
+        "@stackage//:base",
+    ],
+)
+
+haskell_library(
+    name = "Chain3Dupe",
+    srcs = ["Chain3Dupe.hs"],
+    deps = [
+        ":Chain2Dupe",
+        "@stackage//:base",
+    ],
+)
+
+# Checks that PackageImports can distinguish between two targest
+# with a module of the same name.
+# Note that the duplicate modules must be (a) compiled, and (b) not used
+# by any interpreted modules;  This is why this test needs the
+# indirection through Chain2/Chain2Dupe.
+hrepl_test(
+    name = "duplicate_dependency_test",
+    test_args = [
+        "//hrepl/tests:Chain3",
+        "//hrepl/tests:Chain3Dupe",
+        "--package",
+        "//hrepl/tests:Chain1",
+        "--package",
+        "//hrepl/tests:Chain1Dupe",
+    ],
+    commands = [
+        ":m Chain3 Chain3Dupe",
+        ":set -XPackageImports",
+        "import qualified \"Chain1\" Chain1",
+        "import qualified \"Chain1Dupe\" Chain1 as Chain1Dupe",
+        "Chain1.chain1 {OUT}",
+        "Chain1Dupe.chain1 {OUT}",
+        "chain3 {OUT}",
+        "chain3Dupe {OUT}",
+    ],
+    expected_output = "1d3f",
+)
+
+hrepl_test(
+    name = "package_flag_unrelated_test",
+    test_args = [
+        "--package",
+        "//hrepl/tests:Chain1",
+        "//hrepl/tests:Library",
+    ],
+    commands = [
+        ":m Chain1 *Library",
+        "chain1 {OUT}",
+        "appendFile {OUT} unexported",
+    ],
+    expected_output = "1OK",
+)
+
+haskell_library(
+    name = "Forwarding1",
+    srcs = ["Forwarding1.hs"],
+    deps = ["@stackage//:base"],
+)
+
+haskell_library(
+    name = "Forwarding2",
+    deps = [":Forwarding1"],
+)
+
+haskell_library(
+    name = "Forwarding3",
+    srcs = ["Forwarding3.hs"],
+    deps = [
+        ":Forwarding2",
+        "@stackage//:base",
+    ],
+)
+
+hrepl_test(
+    name = "forwarding_test",
+    test_args = [
+        # A chain of three targets, the middle of which
+        # is not specified and is a "forwarding" library that
+        # contains no srcs.
+        "//hrepl/tests:Forwarding1",
+        "//hrepl/tests:Forwarding3",
+    ],
+    commands = [
+        "forwarding1 {OUT}",
+        "forwarding3 {OUT}",
+    ],
+    expected_output = "13",
+)
+
+haskell_library(
+    name = "AtomicPrimops",
+    srcs = ["AtomicPrimops.hs"],
+    deps = [
+        "@stackage//:atomic-primops",
+        "@stackage//:base",
+    ],
+)
+
+hrepl_test(
+    name = "atomic_primops_test",
+    test_args = ["//hrepl/tests:AtomicPrimops"],
+    commands = [
+        ":m AtomicPrimops",
+        "testAndWriteOKTo {OUT}",
+    ],
+    # Not exploding due to missing symbol is a sign of success.
+    expected_output = "OK",
+)
+
+hrepl_test(
+    name = "opt_build_test",
+    test_args = [
+        "-c opt",
+        "//hrepl/tests:FfiUser1",
+    ],
+    commands = ["appendFile {OUT} (show (triple 2))"],
+    expected_output = "6",
+)
+
+haskell_library(
+    name = "ReloadOfBroken",
+    srcs = ["ReloadOfBroken.hs"],
+    # Note: this file intentionally doesn't compile.
+    tags = DO_NOT_BUILD,
+    deps = ["@stackage//:base"],
+)
+
+hrepl_test(
+    name = "reload_of_broken_test",
+    test_args = ["//hrepl/tests:ReloadOfBroken"],
+    commands = [
+        "appendFile {OUT} test",
+        # "Fix" the file by setting a necessary LANGUAGE pragma.
+        ":set -XOverloadedStrings",
+        ":reload",
+        "appendFile {OUT} test",
+    ],
+    expected_output = "OK",  # Printed only once after reload
+)
+
+haskell_library(
+    name = "ReloadOfBrokenDependency",
+    srcs = ["ReloadOfBrokenDependency.hs"],
+    # Depends on a target that doesn't compile:
+    tags = DO_NOT_BUILD,
+    deps = [
+        ":ReloadOfBroken",
+        "@stackage//:base",
+    ],
+)
+
+hrepl_test(
+    name = "reload_of_broken_dependency_test",
+    test_args = [
+        "//hrepl/tests:ReloadOfBroken",
+        "//hrepl/tests:ReloadOfBrokenDependency",
+    ],
+    commands = [
+        "appendFile {OUT} test",
+        # "Fix" the file by setting a necessary LANGUAGE pragma.
+        ":set -XOverloadedStrings",
+        ":reload",
+        "appendFile {OUT} (testDep ++ test)",
+    ],
+    expected_output = "OK-depOK",  # Printed only once after reload
+)
+
+proto_library(
+    name = "test_proto",
+    srcs = ["test.proto"],
+)
+
+haskell_proto_library(
+    name = "test_haskell_pb",
+    deps = [":test_proto"],
+)
+
+hrepl_test(
+    name = "proto_test",
+    test_args = [
+        "//hrepl/tests:test_haskell_pb",
+    ],
+    commands = [
+        "import Data.ProtoLens",
+        "import Proto.Hrepl.Tests.Test",
+        "appendFile {OUT} (show (defMessage :: Test))",
+    ],
+    expected_output = "{}",  # The proto text format for an empty message
+)
+
+# Tests of loading multiple C++ libraries into the interpreter at once
+# We have two C++ libraries (clib1 and clib2) used by two unrelated
+# Haskell libraries.
+
+cc_library(
+    name = "clib1",
+    srcs = ["clib1.cc"],
+)
+
+cc_library(
+    name = "clib2",
+    srcs = ["clib2.cc"],
+)
+
+haskell_library(
+    name = "CLib1",
+    srcs = ["CLib1.hs"],
+    deps = [
+        ":clib1",
+        "@stackage//:base",
+    ],
+)
+
+haskell_library(
+    name = "CLib2",
+    srcs = ["CLib2.hs"],
+    deps = [
+        ":clib2",
+        "@stackage//:base",
+    ],
+)
+
+hrepl_test(
+    name = "no_unique_root_test",
+    test_args = [
+        # Two unrelated targets that each depend on their own cc_library:
+        "//hrepl/tests:CLib1",
+        "//hrepl/tests:CLib2",
+    ],
+    commands = [
+        "p1 <- clib1",
+        "p2 <- clib2",
+        "appendFile {OUT} (show [p1, p2])",
+    ],
+    expected_output = "[1,2]",
+)
+
+haskell_library(
+    name = "CoreLibraryDep",
+    srcs = ["CoreLibraryDep.hs"],
+    deps = [
+        "@stackage//:base",
+        "@stackage//:ghc",
+    ],
+)
+
+hrepl_test(
+    name = "core_library_dep_test",
+    test_args = ["//hrepl/tests:CoreLibraryDep"],
+    commands = ["appendFile {OUT} test"],
+    expected_output = "OK",
+)
+
+genrule(
+    name = "generated-data",
+    outs = ["generated-data.txt"],
+    cmd = "echo OK-generated >> $@",
+)
+
+haskell_library(
+    name = "Runfiles",
+    srcs = ["Runfiles.hs"],
+    data = [
+        "source-data.txt",
+        ":generated-data",
+    ],
+    deps = [
+        "@rules_haskell//tools/runfiles",
+        "@stackage//:base",
+    ],
+)
+
+hrepl_test(
+    name = "runfiles_test",
+    test_args = ["//hrepl/tests:Runfiles"],
+    commands = ["test {OUT}"],
+    expected_output = "OK-source\nOK-generated\n",
+)
+
+haskell_library(
+    name = "Boot",
+    srcs = [
+        "Boot.hs",
+        "Boot.hs-boot",
+        "BootUser.hs",
+    ],
+    deps = ["@stackage//:base"],
+)
+
+hrepl_test(
+    name = "boot_test",
+    test_args = ["//hrepl/tests:Boot"],
+    commands = ["appendFile {OUT} $ show $ IntList 42 $ Boot Nil"],
+    expected_output = "IntList 42 (Boot Nil)",
+)
+
+haskell_library(
+    name = "Warning",
+    srcs = ["Warning.hs"],
+    # Doesn't build since the Haskell rules set -Werror.
+    # This target is testing that hrepl sets -Wwarn.
+    tags = DO_NOT_BUILD,
+)
+
+# Tests that hrepl will load targets with warnings, unlike our build rules
+# that pass -Werror.
+hrepl_test(
+    name = "allow_warnings_test",
+    test_args = ["//hrepl/tests:Warning"],
+    commands = ["appendFile {OUT} test"],
+    expected_output = "OK",
+)
+
+haskell_library(
+    name = "PluginLib",
+    srcs = ["PluginLib.hs"],
+    deps = [
+        "@stackage//:base",
+    ],
+    plugins = [":ghc_typelits_knownnat_plugin"],
+)
+
+ghc_plugin(
+    name = "ghc_typelits_knownnat_plugin",
+    deps = ["@stackage//:ghc-typelits-knownnat"],
+    module = "GHC.TypeLits.KnownNat.Solver",
+)
+
+hrepl_test(
+    name = "plugins_test",
+    test_args = [
+        "//hrepl/tests:PluginLib",
+    ],
+    commands = ["appendFile {OUT} (show two)"],
+    expected_output = "2",
+)
+
+cc_library(
+    name = "ffi_lib",
+    srcs = ["ffi_lib.c"],
+)
+
+haskell_library(
+    name = "FfiUser1",
+    srcs = ["FfiUser1.hs"],
+    deps = [
+        ":ffi_lib",
+        "@stackage//:base",
+    ],
+)
+
+# TODO(b/141778441): After the refactor, we should be able to remove
+# this extra indirection and just load FfiUser1/FfiUser3 into hrepl directly.
+haskell_library(
+    name = "FfiUser2",
+    srcs = ["FfiUser2.hs"],
+    deps = [
+        ":FfiUser1",
+        "@stackage//:base",
+    ],
+)
+
+haskell_library(
+    name = "FfiUser3",
+    srcs = ["FfiUser3.hs"],
+    deps = [
+        ":FfiUser2",
+        "@stackage//:base",
+        "@stackage//:template-haskell",
+    ],
+)
+
+# When one module uses TH and depends on another,
+# and we're not interpreting, the compiler needs to load the
+# code of the latter.  It does so by generating a temporary .so,
+# which hits some other edge cases related to FFI.
+hrepl_test(
+    name = "joined_ffi_test",
+    test_args = [
+        "//hrepl/tests:FfiUser2",
+        "//hrepl/tests:FfiUser3",
+        # Force shared linking (not interpreted)
+        "-fobject-code",
+    ],
+    commands = ["appendFile {OUT} (show eight)"],
+    expected_output = "8",
+)
+
+hrepl_test(
+    name = "file_name_test",
+    test_args = ["hrepl/tests/Basic.hs"],
+    commands = [":main {OUT}"],
+    expected_output = "OK",
+)
+
+test_suite(
+    name = "hrepl_tests",
+    tags = ["hrepl_test"],
+)

@@ -62,6 +62,7 @@ import Data.ProtoLens (decodeMessageOrDie)
 import Data.ProtoLens.Labels ()
 import qualified Data.Text as Text
 import Lens.Micro ((^.), (^..), to, _1)
+import System.Directory (doesFileExist)
 import System.FilePath ((</>), (<.>), joinPath)
 import Bazel.Name
     ( PackageName(..)
@@ -125,11 +126,24 @@ getGhcConfig opts = do
         , "--show_result=0" -- Don't print the list of output files.
         ]
     BinDir binDir <- getBinDir opts
-    -- TODO: we might need to also check for "without the "rules_haskell" prefix
-    -- if it's within the rules_haskell repo itself.
-    decodeMessageOrDie <$> B.readFile
-        (binDir </> "external/rules_haskell/haskell/toolchain_info.pb")
-
+    pbFile <- findToolchainPb binDir
+    decodeMessageOrDie <$> B.readFile pbFile
+  where
+    -- Usually the outputs of @rules_haskell//... live
+    -- in bazel-bin/external/rules_haskell/....  However, when we're building
+    -- in the rules_haskell repository itself, they're just in bazel-bin/...
+    findToolchainPb binDir = do
+    let externalPb =
+            binDir </> "external/rules_haskell/haskell/toolchain_info.pb"
+        internalPb = binDir </> "haskell/toolchain_info.pb"
+    externalExists <- doesFileExist externalPb
+    if externalExists
+        then return externalPb
+        else do
+            internalExists <- doesFileExist internalPb
+            if internalExists
+                then return internalPb
+                else error "Unable to find the toolchain info file."
 
 -- | Information about a set of compiled libraries.
 data PackageSet = PackageSet

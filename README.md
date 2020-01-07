@@ -23,23 +23,25 @@ $ chmod +x ~/.local/bin/hrepl
 ```
 
 You should also specify a patched verson of `rules_haskell` in your project's
-`WORKSPACE` file (TODO: more details).
+`WORKSPACE` file, pointing at the `hrepl` branch of
+`https://github.com/judah/rules_haskell`.
 
 Then, to load one or more targets in the interpreter, run `hrepl` within
 your own Bazel project.  You may specify the Bazel label(s) of any Haskell libraries,
-binaries or tests. For example:
+binaries or tests. For example, in the `rules_haskell` repository itself:
 
 ```shell
-$ hrepl //your/haskell:library
-*Library Library>
+$ hrepl tests/binary-with-lib:lib
+...
+*Lib Lib>
 ```
 
-Or, within a subdirectory:
+Or, within a subdirectory and with [multiple targets](#multiple-build-targets):
 
 ```shell
-$ cd your/haskell
-$ hrepl :library
-*Library Library>
+$ cd tests/binary-with-lib
+$ hrepl :lib :binary-with-lib
+*Lib Lib Main>
 ```
 
 You may also specify individual source files, which will cause hrepl to load
@@ -47,8 +49,8 @@ targets that declare those files in their srcs. (If there is more than one
 possibility, it will choose arbitrarily.)
 
 ```shell
-$ hrepl your/haskell/Library.hs
-*Library Library>
+$ hrepl tests/binary-with-lib/Lib.hs
+*Lib Lib>
 ```
 
 After you modify the interpreted module(s), the `:reload` command will pick up
@@ -64,7 +66,7 @@ You may also load modules from the dependencies of your target(s), using
 `:module` or `import`. For example:
 
 ```shell
-$ hrepl //some:library  # depends on @stackage//:split
+$ hrepl //some:library  # depends on the "split" package
 Prelude Library> import Data.List.Split
 Prelude Library Data.List.Split>
 ```

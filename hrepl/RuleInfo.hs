@@ -82,7 +82,7 @@ import BuildOutput
 
 -- | A file containing a CompileInfo proto message.
 compileInfo :: BuildOutput CompileInfo
-compileInfo = outputGroup "haskell_compile_info_pb"
+compileInfo = outputGroup "haskell_compile_info"
                 *> fmap decodeMessageOrDie (outputFileContents compileInfoPath)
   where
     compileInfoPath (BinDir binDir) label =
@@ -229,7 +229,7 @@ buildOptionsOutput :: BuildOutput BuildOptions
 buildOptionsOutput = sourceFilesGroup *> cdepsSharedLibGroup
                 *> runfilesGroup *> buildOutputs <&> \c ->
     BuildOptions
-      { ghcOptions = c ^. _1 . #simplerOptions
+      { ghcOptions = c ^. _1 . #options
       , sourceFiles = uncurry M.singleton $ mk c
       , runfiles = M.fromList $ c ^.. _1 . #runfiles . traverse
                                 . to (\r -> (r ^. #shortPath, r ^. #fullPath))

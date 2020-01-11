@@ -9,7 +9,6 @@ This is not an officially supported Google product.
 - [Overview](#overview)
 - [Using Build Targets](#using-build-targets)
 - [Forwarding Command-line Flags](#forwarding-command-line-flags)
-- [Known issues](#known-issues)
 
 ## Overview
 
@@ -173,30 +172,3 @@ For example:
 $ hrepl --bazel-args='-c opt' //your/haskell:library
 $ hrepl -c opt //your/haskell:library`
 ```
-
-## Known issues
-
-### Broken features
-- `haskell_proto_library`
-- `plugins`
-
-### Dependencies
-
-`hrepl` doesn't expose dependencies by default.  To load a dependency into the
-interpreter, it needs to be either passed explicitly on the command line, or else
-exposed with `:set -package ...`.  The latter is not great because (a) the
-`...` may be a mangled GHC package name, and (b) `:set -package` causes all modules
-to reload and makes you lose all local bindings.  In both cases, if you want to expose
-a new dependency you effectively need to start a new session.
-
-Google's internal version of hrepl exposes everything, but that has its own tradeoff: Two
-modules from different targets could conflict, and distinguishing between them with
-`-XPackageImports` is cumbersome due to the mangled package names.  Internally, we
-modified GHC to be more permissive and allow unmangled labels as package names.
-
-### Slow tests
-
-The unit tests are fairly slow; on my desktop they take ~3m each to run.  One cause is that
-each run uses a separate `--output_base` to make them hermetic, so Bazel
-has to regenerate the GHC bindist repository separately (e.g., call `make install`).
-Nix might be able to help this, by sharing the same cache each time.

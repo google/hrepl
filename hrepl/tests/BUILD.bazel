@@ -485,6 +485,16 @@ haskell_proto_library(
     deps = [":test_proto"],
 )
 
+haskell_library(
+    name = "ProtoLib",
+    srcs = ["ProtoLib.hs"],
+    deps = [
+        ":test_haskell_pb",
+        "@stackage//:base",
+        "@stackage//:proto-lens",
+    ],
+)
+
 hrepl_test(
     name = "proto_test",
     test_args = [
@@ -495,6 +505,15 @@ hrepl_test(
         "import Proto.Hrepl.Tests.Test",
         "appendFile {OUT} (show (defMessage :: Test))",
     ],
+    expected_output = "{}",  # The proto text format for an empty message
+)
+
+hrepl_test(
+    name = "proto_lib_test",
+    test_args = [
+        "//hrepl/tests:ProtoLib",
+    ],
+    commands = ["apendFile {OUT} (show test)"],
     expected_output = "{}",  # The proto text format for an empty message
 )
 

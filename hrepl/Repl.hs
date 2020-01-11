@@ -212,6 +212,9 @@ ghcBuildArgs ghcConfig buildOptions =
                             ++ ghcOptions buildOptions)
     ++ concatMap (sharedLibArgs . Text.unpack)
             (S.toList $ transitiveCcSharedLibs buildOptions)
+    -- Don't pick up any source files unless they're explicitly passed on the
+    -- command-line (i.e., specified in a "srcs" attribute).
+    ++ ["-i"]
     -- Override previous flags: don't treat warnings as errors.
     ++ ["-Wwarn"]
   where
@@ -232,6 +235,9 @@ suitableOption "-v0" = False
 -- For simplicity, don't distinguish between regular deps (-package-id) and
 -- plugins (which otherwise would require a separate -plugin-package-id flag).
 suitableOption "-hide-all-plugin-packages" = False
+-- rules_haskell emits "-i" flags which can make hrepl incorrectly interpret targets
+-- (instead of compiling them as expected).
+suitableOption ('-':'i':_) = False
 -- When repl loads multiple targets, their CURRENT_PACKAGE_KEYs will conflict
 -- and register a warning.
 suitableOption p

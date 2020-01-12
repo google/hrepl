@@ -22,6 +22,10 @@
 -- dependencies that are not factored into publicly visible
 -- targets. Moreover, the dependencies are likely unstable as they are
 -- implementation artifacts and not designed interfaces.
+--
+-- You may also share the same output directory across runs by setting
+-- HREPL_TEST_OUTPUT.  This setting is useful in particular for caching
+-- build outputs.
 module ReplTestLib
     ( TestScript(..)
     , hreplTest
@@ -29,10 +33,12 @@ module ReplTestLib
 
 import Prelude hiding (readFile)
 
+import Control.Exception (bracket)
 import Control.Monad (unless)
-import Bazel(BazelOpts(..), bazelShutdown, defBazelOpts)
+import Bazel(BazelOpts(..), bazelClean, bazelShutdown, defBazelOpts)
 import qualified Bazel.Runfiles as Runfiles
-import System.Environment (getEnv)
+import System.Directory (getCurrentDirectory, setCurrentDirectory)
+import System.Environment (getEnv, lookupEnv)
 import System.Exit (ExitCode(..))
 import System.FilePath ((</>))
 import System.IO (hClose, hPutStrLn)
@@ -44,16 +50,25 @@ import System.Process ( CreateProcess(..), StdStream(..), proc, waitForProcess
 import Test.HUnit (assertEqual)
 import Test.HUnit.Lang (Assertion)
 
-newtype TestDirs = TestDirs
-    { baseDir :: FilePath
+data TestDirs = TestDirs
+    { clientDir :: FilePath
+    , outputDir :: FilePath
     }
+
+withTestDirs :: (TestDirs -> IO a) -> IO a
+withTestDirs act = do
+    client <- getEnv "HREPL_TEST_CLIENT"
+    let run output = act TestDirs { clientDir = client, outputDir = output }
+    maybeOutputDir <- lookupEnv "HREPL_TEST_OUTPUT"
+    case maybeOutputDir of
+        Nothing -> withSystemTempDirectory "hrepl_test_output" run
+        Just o -> run o
 
 -- | Runs the test with the given script and verifies the output
 -- printed to argv[0] matches the expected.
 hreplTest :: TestScript -> String -> Assertion
 hreplTest t expected = do
-    dirs <- TestDirs <$> getEnv "HREPL_TEST_CLIENT"
-    got <- runHrepl t dirs
+    got <- withTestDirs (runHrepl t)
     assertEqual "Unexpected result" expected got
 
 -- Parameters for runTest.
@@ -63,14 +78,14 @@ data TestScript = TestScript
     }
 
 -- | Convenient options for running bazel in isolation.
-testBazelOpts :: TestDirs -> FilePath -> BazelOpts
-testBazelOpts testDirs tmpD =
+testBazelOpts :: TestDirs -> BazelOpts
+testBazelOpts testDirs =
     defBazelOpts
     { bazelPre = bazelPre defBazelOpts ++
                  [ -- Isolates from any config settings.
                    "--bazelrc=/dev/null"
                    -- Redirect outputs to a temporary location
-                 , "--output_base=" ++ tmpD </> "output-base"
+                 , "--output_base=" ++ outputDir testDirs </> "output-base"
                  ]
     , bazelPost = bazelPost defBazelOpts ++
                 [ "--noshow_progress"
@@ -86,41 +101,53 @@ testBazelOpts testDirs tmpD =
     }
 
 runHrepl :: TestScript -> TestDirs -> IO String
-runHrepl TestScript{..} testDirs =
-    withSystemTempDirectory "hrepl_test." $ \tmpD -> do
-        rfiles <- Runfiles.create
-        path <- getEnv "PATH"
-        let hrepl = Runfiles.rlocation rfiles "hrepl/hrepl/hrepl"
-        let bazelOpts = testBazelOpts testDirs tmpD
-            args = [ "--bazel"
-                   , bazelBin bazelOpts
-                   , "--bazel-pre-args"
-                   , unwords $ bazelPre bazelOpts
-                   , "--bazel-args"
-                   , unwords $ bazelPost bazelOpts
-                   , "--show-commands"
-                   ]
-                   ++ tsUserArgs
-            cp = (proc hrepl args) { cwd = Just (baseDir testDirs)
-                                   -- TODO: don't pass PATH through.
-                                   -- It's currently needed for ghc_bindist to find the
-                                   -- `python` executable.
-                                   , env = Just [("HOME", tmpD), ("PATH", path)]
-                                   , std_in = CreatePipe
-                                   }
-        withCreateProcess cp $ \(Just stdin) _ _ ph -> do
-            -- Uses a distinct explicit result file instead of stdout or stderr.
-            -- Both of these are polluted by hrepl, bazel, and ghci.
-            let output = tmpD </> "result"
-            hPutStrLn stdin (tsStdin output)
-            hPutStrLn stdin ":quit"
-            hClose stdin
+runHrepl TestScript{..} testDirs = do
+    -- Share the same disk cache across runs in the same HREPL_OUTPUT_BASE.
+    writeFile (outputDir testDirs </> ".bazelrc")
+        $ "build --disk_cache=" ++ outputDir testDirs </> "cache"
+    rfiles <- Runfiles.create
+    path <- getEnv "PATH"
+    let hrepl = Runfiles.rlocation rfiles "hrepl/hrepl/hrepl"
+    let bazelOpts = testBazelOpts testDirs
+        args = [ "--bazel"
+                , bazelBin bazelOpts
+                , "--bazel-pre-args"
+                , unwords $ bazelPre bazelOpts
+                , "--bazel-args"
+                , unwords $ bazelPost bazelOpts
+                , "--show-commands"
+                ]
+                ++ tsUserArgs
+        cp = (proc hrepl args)
+                { cwd = Just (clientDir testDirs)
+                -- TODO: don't pass PATH through.
+                -- It's currently needed for ghc_bindist to find the
+                -- `python` executable.
+                , env = Just [("HOME", outputDir testDirs), ("PATH", path)]
+                , std_in = CreatePipe
+                }
+    -- Clean up any previous builds (such as when sharing HREPL_OUTPUT_BASE)
+    bracket getCurrentDirectory setCurrentDirectory
+        $ const $ do
+            setCurrentDirectory (clientDir testDirs)
+            bazelClean bazelOpts
+    let output = outputDir testDirs </> "result"
+    -- If the output file already exists, overwrite any previous values.
+    -- If it doesn't exist, prevent confusing "file not found" errors in case the
+    -- test fails and doesn't append anything to it.
+    writeFile output ""
+    withCreateProcess cp $ \(Just stdin) _ _ ph -> do
+        -- Uses a distinct explicit result file instead of stdout or stderr.
+        -- Both of these are polluted by hrepl, bazel, and ghci.
+        hPutStrLn stdin (tsStdin output)
+        hPutStrLn stdin ":quit"
+        hClose stdin
 
-            exitCode <- waitForProcess ph
-            unless (exitCode == ExitSuccess) $
-                error $ "Hrepl failed with: " ++ show exitCode
-            -- Shut down the async bazel process to prevent test flakiness
-            -- and zombie bazel processes.
-            bazelShutdown bazelOpts
+        exitCode <- waitForProcess ph
+        unless (exitCode == ExitSuccess) $
+            error $ "Hrepl failed with: " ++ show exitCode
+        -- Shut down the async bazel process to prevent test flakiness
+        -- and zombie bazel processes.
+        bazelShutdown bazelOpts
 
-            readFile output
+        readFile output

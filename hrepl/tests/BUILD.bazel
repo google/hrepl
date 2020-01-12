@@ -2,7 +2,10 @@
 #
 # To run the tests locally:
 #
-#   bazel test -j 4 --test_env=PATH --run_under="env HREPL_TEST_CLIENT=$PWD" hrepl/tests:hrepl_tests
+# hrepl/tests/run_tests hrepl/tests:hrepl_tests
+#
+# The first unit test may take several minutes to run as it computes the dependencies.
+# Subsequent tests in the same run should use the same build outputs and run more quickly.
 
 load("@rules_haskell//haskell:defs.bzl", "haskell_binary", "haskell_library", "ghc_plugin")
 load("@rules_haskell//haskell:protobuf.bzl", "haskell_proto_library")
@@ -26,6 +29,7 @@ haskell_library(
         "@rules_haskell//tools/runfiles",
         "@stackage//:HUnit",
         "@stackage//:base",
+        "@stackage//:directory",
         "@stackage//:filepath",
         "@stackage//:process",
         "@stackage//:strict",

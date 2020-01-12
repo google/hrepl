@@ -32,6 +32,7 @@ module Bazel
     getGenfilesDir,
     bazelInfo,
     bazelShutdown,
+    bazelClean,
   )
 where
 
@@ -110,12 +111,15 @@ bazelCmd_ :: BazelOpts -> String -> [String] -> IO ()
 bazelCmd_ opts cmd args = do
   allArgs <- getBazelArgs opts cmd args
   Process.withCreateProcess
-    (Process.proc (bazelBin opts) allArgs)
-      { std_err = CreatePipe,
+    (Process.proc (bazelBin opts) (allArgs ++ ["--color=yes", "--curses=yes"]))
+      { -- std_err = CreatePipe,
         cwd = bazelCwd opts
       }
+{-
     $ \Nothing Nothing (Just herr) ph -> do
       filterInfo herr
+-}
+    $ \Nothing Nothing Nothing ph -> do
       ec <- Process.waitForProcess ph
       when (ec /= ExitSuccess)
         $ error
@@ -168,7 +172,9 @@ filterInfo h = do
         | otherwise -> do
           -- An INFO: line: if it's the first consecutive one, print the
           -- contents before the "INFO:".
-          unless prevInfo $ T.hPutStr stderr l'
+          unless prevInfo $ do
+            T.hPutStr stderr l'
+            IO.hFlush stderr
           pure True
     info = "INFO:"
 
@@ -226,6 +232,9 @@ bazelInfo :: BazelOpts -> String -> IO String
 bazelInfo opts key =
   takeWhile (/= '\n') . T.unpack . T.decodeUtf8
     <$> bazelCmd opts "info" [key]
+
+bazelClean :: BazelOpts -> IO ()
+bazelClean opts = bazelCmd_ opts "clean" []
 
 bazelShutdown :: BazelOpts -> IO ()
 bazelShutdown opts = bazelCmd_ opts' "shutdown" []

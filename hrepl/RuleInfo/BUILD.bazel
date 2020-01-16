@@ -1,0 +1,26 @@
+# Utilities for accessing source and generated files from the bazel execution root.
+load("@rules_haskell//haskell:defs.bzl", "haskell_library", "haskell_test")
+
+haskell_library(
+    name = "execution_root",
+    srcs = ["ExecutionRoot.hs"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:bazel",
+        "@stackage//:base",
+        "@stackage//:extra",
+        "@stackage//:filepath",
+        "@stackage//:text",
+    ],
+)
+
+haskell_test(
+    name = "execution_root_test",
+    srcs = ["ExecutionRootTest.hs"],
+    deps = [
+        ":execution_root",
+        "@stackage//:HUnit",
+        "@stackage//:test-framework-hunit",
+        "@stackage//:test-framework",
+    ],
+)

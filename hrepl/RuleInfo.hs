@@ -19,7 +19,6 @@
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 module RuleInfo (
-    getExecutionRoot,
     -- * Building and reading GhcConfig
     GhcConfig,
     getGhcConfig,
@@ -79,6 +78,7 @@ import BuildOutput
     , outputFileContents
     , outputLabel
     )
+import RuleInfo.ExecutionRoot (ExecutionRoot, toAbsolute)
 
 -- | A file containing a CompileInfo proto message.
 compileInfo :: BuildOutput CompileInfo
@@ -112,9 +112,6 @@ targetPath (Label w (PackageName comps) n)
     workspacePath = case w of
         CurrentWorkspace -> ""
         Workspace t -> "external" </> Text.unpack t
-
-getExecutionRoot :: BazelOpts -> IO FilePath
-getExecutionRoot opts = bazelInfo opts "execution_root"
 
 -- | Get the GHC configuration for the current working directory.
 --
@@ -181,15 +178,17 @@ instance Monoid PackageSet where
 
 -- | The command-line flags to expose the immediate dependencies.
 -- This is how the Bazel build rules behave.
-immediatePackageSetFlags :: PackageSet -> [String]
-immediatePackageSetFlags d =
-    [ "-package-db=" ++ Text.unpack t | t <- S.toList (transitivePackageDbs d)]
+immediatePackageSetFlags :: ExecutionRoot -> PackageSet -> [String]
+immediatePackageSetFlags execRoot d =
+    [ "-package-db=" ++ toAbsolute execRoot (Text.unpack t)
+    | t <- S.toList (transitivePackageDbs d)]
     ++ [ "-package-id=" ++ Text.unpack p | p <- S.toList (immediatePackageIds d)]
 
 -- | The command-line flags to expose all transitive dependencies.
-transitivePackageSetFlags :: PackageSet -> [String]
-transitivePackageSetFlags d =
-    [ "-package-db=" ++ Text.unpack t | t <- S.toList (transitivePackageDbs d)]
+transitivePackageSetFlags :: ExecutionRoot -> PackageSet -> [String]
+transitivePackageSetFlags execRoot d =
+    [ "-package-db=" ++ toAbsolute execRoot (Text.unpack t)
+    | t <- S.toList (transitivePackageDbs d)]
     ++ [ "-package-id=" ++ Text.unpack p
        | p <- S.toList (transitivePackageIds d)
        ]

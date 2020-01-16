@@ -49,10 +49,16 @@ import RuleInfo
     ( BuildOptions(..)
     , buildDependentPackages
     , buildOptionsOutput
-    , getExecutionRoot
     , GhcConfig
     , getGhcConfig
     , transitivePackageSetFlags
+    )
+import RuleInfo.ExecutionRoot
+    ( ExecutionRoot
+    , fixFilePathFlags
+    , getExecutionRoot
+    , toAbsolute
+    , toAbsoluteT
     )
 import ModuleName
     ( parseModuleNameFromFile
@@ -115,6 +121,9 @@ runWith ReplOptions
     allTargets <- getAllIntermediateTargets bazelOpts targetLabels
     compiledLabels <- bazelExpandTargetsToLabels bazelOpts compiledTargets
 
+    -- The "execution root" directory contains all the source and output
+    -- files from Bazel.  It's usually symlinked from "bazel-{workspace}".
+    execRoot <- getExecutionRoot bazelOpts
 
     -- Build dependencies first, then non-root targets, then the root.
     -- The execution_root (bazel-{repo}) will only contain source files
@@ -126,14 +135,10 @@ runWith ReplOptions
     -- directory (b/118790965).
     dependencies <- buildDependentPackages bazelOpts
                                         compiledLabels allTargets
-    let depFlags = transitivePackageSetFlags dependencies
+    let depFlags = transitivePackageSetFlags execRoot dependencies
     buildOptions <- mconcat <$>
         collectBuildOutputs bazelOpts buildOptionsOutput allTargets
 
-    -- Move into the "execution root" directory, which contains all
-    -- the source and output files from Bazel.  It's usually symlinked
-    -- from "bazel-{workspace}".
-    executionDir <- getExecutionRoot bazelOpts
     -- Run GHC, linking in the FFI shared library via the "ffi-deps" package.
     -- BuildOptions contains the module names for all built targets; we
     -- only want to import modules for the targets from the command line.
@@ -141,7 +146,7 @@ runWith ReplOptions
                 M.findWithDefault S.empty label (sourceFiles buildOptions)
         allSourceFiles = M.foldl' S.union S.empty (sourceFiles buildOptions)
     explicitTargetModules
-        <- readTargetModules $ map ((executionDir </>) . Text.unpack)
+        <- readTargetModules $ map (toAbsolute execRoot . Text.unpack)
                 $ S.toList $ foldMap filesIn targetLabels
 
     -- Generate a GHCi script to load all source files and then import the
@@ -153,7 +158,8 @@ runWith ReplOptions
     -- - In the common case of a single module, that module's contents will be
     --   exposed, which is probably what the user wants.
     let spaceDelimit = Text.intercalate " " . S.toList
-        adds    = ":add "    <> spaceDelimit allSourceFiles
+        adds    = ":add "    <> spaceDelimit
+                                (S.map (toAbsoluteT execRoot) allSourceFiles)
         imports = ":module +" <> spaceDelimit (S.map (Text.pack . prettyPrint)
                                                   explicitTargetModules)
         scriptContents = Text.unlines [adds, imports]
@@ -165,7 +171,7 @@ runWith ReplOptions
             runfilesDir = tmpDir </> "runfiles"
         forM_ [outputDir, runfilesDir] $ createDirectoryIfMissing True
         -- Collect the runfiles into a temporary directory.
-        makeRunfilesDir runfilesDir executionDir (runfiles buildOptions)
+        makeRunfilesDir runfilesDir execRoot (runfiles buildOptions)
 
         scriptFile <- writeGhciScript scriptContents tmpDir
 
@@ -176,22 +182,22 @@ runWith ReplOptions
 
         externalEnv <- getEnvironment
         let newEnv = ("RUNFILES_DIR", runfilesDir) : externalEnv
-            ghc = Text.unpack $ ghcConfig ^. #ghc
+            ghc = toAbsolute execRoot $ Text.unpack $ ghcConfig ^. #ghc
             libdir = ghcConfig ^. #libraryRoot
-            allArgs = [ "-B" ++ Text.unpack libdir | not (Text.null libdir)] ++
+            allArgs = [ "-B" ++ toAbsolute execRoot (Text.unpack libdir)
+                      | not (Text.null libdir)] ++
                       [ "--interactive"
                       , "-outputdir", outputDir
                       , "-ghci-script", scriptFile
-                      ] ++ ghcBuildArgs ghcConfig buildOptions
+                      ] ++ ghcBuildArgs execRoot ghcConfig buildOptions
                       ++ rtsArgs
                       ++ depFlags
                       ++ userArgs
         when (bazelShowCommands bazelOpts) $
             IO.hPutStrLn IO.stderr $
             "Running: " ++ Process.showCommandForUser ghc allArgs
-        Process.withCreateProcess (Process.proc (executionDir </> ghc) allArgs)
+        Process.withCreateProcess (Process.proc (toAbsolute execRoot ghc) allArgs)
             { env = Just newEnv
-            , cwd = Just executionDir
             , delegate_ctlc = True
             }
             $ \_ _ _ ph -> do
@@ -205,11 +211,12 @@ runWith ReplOptions
 
 -- | Arguments to pass to GHC, extracted from the accumulated buildOptions
 -- for each target we're interpreting
-ghcBuildArgs :: GhcConfig -> BuildOptions -> [String]
-ghcBuildArgs ghcConfig buildOptions =
+ghcBuildArgs :: ExecutionRoot -> GhcConfig -> BuildOptions -> [String]
+ghcBuildArgs execRoot ghcConfig buildOptions =
     filter suitableOption (map Text.unpack
+                            $ fixFilePathFlags execRoot
                             $ ghcConfig ^. #commonOptions
-                            ++ ghcOptions buildOptions)
+                              ++ ghcOptions buildOptions)
     ++ concatMap (sharedLibArgs . Text.unpack)
             (S.toList $ transitiveCcSharedLibs buildOptions)
     -- Don't pick up any source files unless they're explicitly passed on the
@@ -224,9 +231,9 @@ ghcBuildArgs ghcConfig buildOptions =
   where
     -- Links directly against the shared libraries.
     sharedLibArgs f =
-        [ "-L" ++ takeDirectory f
+        [ "-L" ++ toAbsolute execRoot (takeDirectory f)
         , "-l" ++ sharedLibName f
-        , "-optl-Wl,-rpath=" ++ takeDirectory f
+        , "-optl-Wl,-rpath=" ++ toAbsolute execRoot (takeDirectory f)
         ]
     -- Convert "foo/.../libbar.so" to "bar"
     sharedLibName = drop 3 . takeBaseName
@@ -273,12 +280,11 @@ parseModuleNameFromFileOrWarn f = do
 -- | Symlink all runfiles into a temporary directory, referenced by their
 -- short_paths.  (E.g., "bazel-out/k8-fastbuild/foo/bar.txt" will be symlinked
 -- to "{tmpdir}/foo/bar.txt".
-makeRunfilesDir :: FilePath -> FilePath -> Map Text Text -> IO ()
-makeRunfilesDir dir workspace files = do
-    let prefixTarget = Text.pack (workspace ++ "/")
+makeRunfilesDir :: FilePath -> ExecutionRoot -> Map Text Text -> IO ()
+makeRunfilesDir dir execRoot files = do
     let prefixDir = Text.pack (dir ++ "/")
     forM_ (M.toList files) $ \(shortPath, fullPath) -> do
         createDirectoryIfMissing True
             $ takeDirectory $ Text.unpack $ prefixDir <> shortPath
-        createSymbolicLink (encodeUtf8 $ prefixTarget <> fullPath)
+        createSymbolicLink (encodeUtf8 $ toAbsoluteT execRoot fullPath)
             (encodeUtf8 $ prefixDir <> shortPath)

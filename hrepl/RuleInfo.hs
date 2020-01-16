@@ -160,9 +160,6 @@ data PackageSet = PackageSet
     , transitivePackageDbs :: Set Text
         -- ^ What package DBs (transitively) are being used, and need to
         -- be compiled ahead of time (--package-db)
-    , transitiveHaskellSharedLibs :: Set Text
-        -- ^ Shared libraries for Haskell code (transitively) that may be used
-        -- when ghci runs code, or for TemplateHaskell.
     }
 
 packageSetOutput :: BuildOutput PackageSet
@@ -170,7 +167,6 @@ packageSetOutput = transitiveDepsGroup *> libraryInfo <&> \c -> PackageSet
   { immediatePackageIds = S.singleton $ c ^. #packageId
   , transitivePackageIds = S.fromList $ c ^. #transitivePackageIds
   , transitivePackageDbs = S.fromList $ c ^. #transitivePackageDbs
-  , transitiveHaskellSharedLibs = S.fromList $ c ^. #transitiveHaskellSharedLibs
   }
 
 instance Semigroup PackageSet where
@@ -178,12 +174,10 @@ instance Semigroup PackageSet where
         { immediatePackageIds = (mappend `on` immediatePackageIds) setA setB
         , transitivePackageIds = (mappend `on` transitivePackageIds) setA setB
         , transitivePackageDbs = (mappend `on` transitivePackageDbs) setA setB
-        , transitiveHaskellSharedLibs =
-            (mappend `on` transitiveHaskellSharedLibs) setA setB
         }
 
 instance Monoid PackageSet where
-    mempty = PackageSet mempty mempty mempty mempty
+    mempty = PackageSet mempty mempty mempty
 
 -- | The command-line flags to expose the immediate dependencies.
 -- This is how the Bazel build rules behave.

@@ -34,6 +34,7 @@ stack_snapshot(
         "containers",
         "deepseq",
         "directory",
+        "extra",
         "filepath",
         "ghc",
         "ghc-typelits-knownnat",

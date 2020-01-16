@@ -215,6 +215,10 @@ ghcBuildArgs ghcConfig buildOptions =
     -- Don't pick up any source files unless they're explicitly passed on the
     -- command-line (i.e., specified in a "srcs" attribute).
     ++ ["-i"]
+    -- Hide all transitive dependencies unless they're explicitly requested.
+    -- TODO(#4): Consider whether to expose more by default.
+    -- But *do* always expose the "base" package, since ghci breaks otherwise.
+    ++ ["-hide-all-packages", "-package=base"]
     -- Override previous flags: don't treat warnings as errors.
     ++ ["-Wwarn"]
   where

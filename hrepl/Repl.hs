@@ -218,7 +218,7 @@ ghcBuildArgs execRoot ghcConfig buildOptions =
                             $ ghcConfig ^. #commonOptions
                               ++ ghcOptions buildOptions)
     ++ concatMap (sharedLibArgs . Text.unpack)
-            (S.toList $ transitiveCcSharedLibs buildOptions)
+            (S.toList $ transitiveCcLibs buildOptions)
     -- Don't pick up any source files unless they're explicitly passed on the
     -- command-line (i.e., specified in a "srcs" attribute).
     ++ ["-i"]

@@ -97,9 +97,9 @@ libraryInfo = outputGroup "haskell_library_info"
         binDir </> targetPath label <.> "HaskellLibrary.pb"
 
 -- | Output groups as defined by the Haskell build rules.
-cdepsSharedLibGroup, runfilesGroup, sourceFilesGroup, transitiveDepsGroup
+cdepLibsGroup, runfilesGroup, sourceFilesGroup, transitiveDepsGroup
     :: BuildOutput ()
-cdepsSharedLibGroup = outputGroup "haskell_cdeps_shared_lib"
+cdepLibsGroup = outputGroup "haskell_cdep_libs"
 runfilesGroup = outputGroup "haskell_runfiles"
 sourceFilesGroup = outputGroup "haskell_source_files"
 transitiveDepsGroup = outputGroup "haskell_transitive_deps"
@@ -202,7 +202,7 @@ data BuildOptions = BuildOptions
   -- ^ Haskell source files to load (.hs, .lhs)
   , runfiles :: Map Text Text
   -- ^ Map from runfile short path to the full path under bazel-{workspace}
-  , transitiveCcSharedLibs :: Set Text
+  , transitiveCcLibs :: Set Text
   -- ^ Transitive shared libraries for cc_library dependencies
   } deriving Show
 
@@ -215,18 +215,18 @@ instance Monoid BuildOptions where
     { ghcOptions  = (mappend `on` ghcOptions)  optsA optsB
     , sourceFiles = (mappend `on` sourceFiles) optsA optsB
     , runfiles = (mappend `on` runfiles) optsA optsB
-    , transitiveCcSharedLibs = (mappend `on` transitiveCcSharedLibs) optsA optsB
+    , transitiveCcLibs = (mappend `on` transitiveCcLibs) optsA optsB
     }
 
 buildOptionsOutput :: BuildOutput BuildOptions
-buildOptionsOutput = sourceFilesGroup *> cdepsSharedLibGroup
+buildOptionsOutput = sourceFilesGroup *> cdepLibsGroup
                 *> runfilesGroup *> buildOutputs <&> \c ->
     BuildOptions
       { ghcOptions = c ^. _1 . #options
       , sourceFiles = uncurry M.singleton $ mk c
       , runfiles = M.fromList $ c ^.. _1 . #runfiles . traverse
                                 . to (\r -> (r ^. #shortPath, r ^. #fullPath))
-      , transitiveCcSharedLibs = S.fromList $ c ^. _1 . #transitiveCcSharedLibs
+      , transitiveCcLibs = S.fromList $ c ^. _1 . #transitiveCcLibs
       }
   where
     mk (comp, label') = (label', S.fromList $ comp ^. #sourceFiles)

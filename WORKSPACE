@@ -6,8 +6,8 @@ load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 git_repository(
     name = "rules_haskell",
     remote = "https://github.com/judah/rules_haskell",
-    commit = "b93717c7236420a4eadfc19f4cd84bd14c16d06f",
-    shallow_since = "1578801954 -0800",
+    commit = "f9b4c926857af98789aff14d81a1bb8ca04829ba",
+    shallow_since = "1579629957 -0800",
 )
 load("@rules_haskell//haskell:repositories.bzl", "rules_haskell_dependencies")
 rules_haskell_dependencies()

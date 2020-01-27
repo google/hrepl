@@ -21,9 +21,9 @@ $ cp --no-preserve=mode bazel-bin/hrepl/hrepl ~/.local/bin
 $ chmod +x ~/.local/bin/hrepl
 ```
 
-You should also specify a patched verson of `rules_haskell` in your project's
-`WORKSPACE` file, pointing at the `hrepl` branch of
-`https://github.com/judah/rules_haskell`.
+You should also use a recent enough verson of `rules_haskell` in your
+project's `WORKSPACE` file.  (See this repository's `WORKSPACE` file for an
+example.)
 
 Then, to load one or more targets in the interpreter, run `hrepl` within
 your own Bazel project.  You may specify the Bazel label(s) of any Haskell libraries,

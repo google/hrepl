@@ -5,9 +5,9 @@ load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
 git_repository(
     name = "rules_haskell",
-    remote = "https://github.com/judah/rules_haskell",
-    commit = "f9b4c926857af98789aff14d81a1bb8ca04829ba",
-    shallow_since = "1579629957 -0800",
+    remote = "https://github.com/tweag/rules_haskell",
+    commit = "c1625027dd72c6aa17c8b48c176e7a6a787d406e",
+    shallow_since = "1580119964 -0800",
 )
 load("@rules_haskell//haskell:repositories.bzl", "rules_haskell_dependencies")
 rules_haskell_dependencies()
@@ -60,15 +60,6 @@ stack_snapshot(
         "@happy",
     ],
 )
-
-http_archive(
-  name = "com_google_protobuf",
-  strip_prefix = "protobuf-3.11.1",
-  sha256 = "20e55e7dc9ebbb5800072fff25fd56d7c0a168493ef4652e78910566fa6b45f5",
-  urls = ["https://github.com/google/protobuf/archive/v3.11.1.zip"],
-)
-load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
-protobuf_deps()
 
 register_toolchains(
     ":proto_toolchain",

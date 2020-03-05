@@ -79,6 +79,7 @@ getAllIntermediateTargets bazelOpts interpretDeps targetLabels =
     bazelQuery bazelOpts queryAllPaths
   where
     queryAllPaths =
+      Q.kind "\"haskell_binary|haskell_library|haskell_test\"" $
         let targetQueries = map Q.labelToQuery targetLabels
          in Q.letIn ("ts", Q.union targetQueries) $
             Q.letIn ("tds", Q.var "ts"

@@ -59,9 +59,9 @@ _hrepl_test = rule(
 )
 
 def hrepl_test(**kwargs):
+    """Declares a test of the hrepl binary."""
+    tags = []
     if "tags" in kwargs:
         tags = kwargs.pop(tags)
-    else:
-        tags = []
-    tags += ["hrepl_test"]
+    tags.append("hrepl_test")
     _hrepl_test(tags = tags, **kwargs)

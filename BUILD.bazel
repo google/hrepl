@@ -1,4 +1,4 @@
-load("@rules_haskell//haskell:defs.bzl", "haskell_binary", "haskell_library", "haskell_test")
+load("@rules_haskell//haskell:defs.bzl", "haskell_library", "haskell_test")
 load("@rules_haskell//haskell:protobuf.bzl", "haskell_proto_toolchain")
 
 haskell_library(

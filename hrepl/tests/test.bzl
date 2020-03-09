@@ -58,10 +58,23 @@ _hrepl_test = rule(
     }
 )
 
-def hrepl_test(**kwargs):
-    """Declares a test of the hrepl binary."""
-    tags = []
-    if "tags" in kwargs:
-        tags = kwargs.pop(tags)
-    tags.append("hrepl_test")
-    _hrepl_test(tags = tags, **kwargs)
+def hrepl_test(name="", test_args=[], commands=[], expected_output="", tags=[], **kwargs):
+    """Declares a test of the hrepl binary.
+
+    Args:
+      name: The name of this rule.
+      test_args: List of flags to pass to hrepl.
+      commands: List of commands to run in the hrepl REPL.  The substring
+        "{OUT}" will be replaced by the path to the output file.
+      expected_output: Expected vvalue for the output file.
+      tags: Tags for this rule.
+      **kwargs: Other rule parameters.
+    """
+    _hrepl_test(
+        name = name,
+        test_args = test_args,
+        commands = commands,
+        expected_output = expected_output,
+        tags = tags + ["hrepl_test"],
+        **kwargs
+    )

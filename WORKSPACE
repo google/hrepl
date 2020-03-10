@@ -18,6 +18,15 @@ load(
 )
 haskell_register_ghc_bindists(
     version = "8.6.5",
+    compiler_flags = [
+        "-Wall",
+        "-Werror",
+        "-Wno-missing-signatures",
+        "-Wno-type-defaults",
+        "-Wno-trustworthy-safe",
+        "-Wincomplete-uni-patterns",
+        "-Wincomplete-record-updates",
+    ],
 )
 
 load("@rules_haskell//haskell:cabal.bzl", "stack_snapshot")
@@ -47,12 +56,14 @@ stack_snapshot(
         "proto-lens",
         "proto-lens-protoc",
         "strict",
+        "stm",
         "temporary",
         "template-haskell",
         "transformers",
         "test-framework",
         "test-framework-hunit",
         "text",
+        "typed-process",
         "unix",
         "vector",
     ],

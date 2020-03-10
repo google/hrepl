@@ -19,7 +19,8 @@
 -- These functions attempt to remove noise from the output of Bazel
 -- and to invoke it with parameters that make it faster.
 module Bazel
-  ( BazelOpts (..),
+  ( BazelError (..),
+    BazelOpts (..),
     defBazelOpts,
     bazelCmd,
     bazelCmd_,
@@ -36,11 +37,11 @@ module Bazel
   )
 where
 
-import Control.Concurrent.Async (concurrently)
-import Control.Exception (ErrorCall (..), bracket, catch)
+import Control.Exception (Exception, bracket, catch, throwIO)
 import Control.Monad (unless, when)
+import qualified Control.Monad.STM as STM
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as B
+import qualified Data.ByteString.Lazy as LB
 import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
@@ -50,8 +51,8 @@ import Bazel.Name (Label (..), parseLabel)
 import System.Exit (ExitCode (..))
 import System.IO (Handle, stderr)
 import qualified System.IO as IO
-import System.Process (CreateProcess (..), StdStream (CreatePipe))
-import qualified System.Process as Process
+import System.Process (showCommandForUser)
+import qualified System.Process.Typed as Process
 
 -- | Customization of bazel command line.
 data BazelOpts
@@ -82,51 +83,50 @@ defBazelOpts =
     False -- Don't show commands
     Nothing
 
+newtype BazelError = BazelError T.Text
+  deriving (Show)
+
+instance Exception BazelError
+
 -- | Run Bazel with the given command and arguments, and capture its stdout.
 bazelCmd :: BazelOpts -> String -> [String] -> IO ByteString
 bazelCmd opts cmd args = do
   allArgs <- getBazelArgs opts cmd args
-  Process.withCreateProcess
-    (Process.proc (bazelBin opts) allArgs)
-      { std_out = CreatePipe,
-        std_err = CreatePipe,
-        cwd = bazelCwd opts
-      }
-    $ \Nothing (Just hout) (Just herr) ph -> do
-      ((), out) <-
-        concurrently
-          (filterInfo herr)
-          (B.hGetContents hout)
-      ec <- Process.waitForProcess ph
-      when (ec /= ExitSuccess)
-        $ error
-        $ "bazelCmd: Failed running: "
-          ++ Process.showCommandForUser
-            (bazelBin opts)
-            allArgs
-      return out
+  let cfg =
+        maybe id Process.setWorkingDir (bazelCwd opts)
+        . Process.setStdout (fmap LB.toStrict <$> Process.byteStringOutput)
+        . Process.setStderr Process.createPipe
+        . Process.proc (bazelBin opts)
+        $ allArgs
+  Process.withProcessWait cfg $ \process -> do
+    -- Get stderr from child, filter, and reprint from parent
+    filterInfo $ Process.getStderr process
+    ec <- Process.waitExitCode process
+    when (ec /= ExitSuccess)
+      $ throwIO
+      $ BazelError
+      $ "bazelCmd: Failed running: "
+        <> T.pack (showCommandForUser (bazelBin opts) allArgs)
+    -- Return stdout from child
+    STM.atomically $ Process.getStdout process
 
 -- | Run Bazel with the given command and arguments, while sharing stdout.
 bazelCmd_ :: BazelOpts -> String -> [String] -> IO ()
 bazelCmd_ opts cmd args = do
   allArgs <- getBazelArgs opts cmd args
-  Process.withCreateProcess
-    (Process.proc (bazelBin opts) (allArgs ++ ["--color=yes", "--curses=yes"]))
-      { -- std_err = CreatePipe,
-        cwd = bazelCwd opts
-      }
-{-
-    $ \Nothing Nothing (Just herr) ph -> do
-      filterInfo herr
--}
-    $ \Nothing Nothing Nothing ph -> do
-      ec <- Process.waitForProcess ph
-      when (ec /= ExitSuccess)
-        $ error
-        $ "bazelCmd_: Failed running: "
-          ++ Process.showCommandForUser
-            (bazelBin opts)
-            allArgs
+  let cfg =
+        maybe id Process.setWorkingDir (bazelCwd opts)
+        . Process.setStderr Process.createPipe
+        . Process.proc (bazelBin opts)
+        $ allArgs ++ ["--color=yes", "--curses=yes"]
+  Process.withProcessWait cfg $ \process -> do
+    filterInfo $ Process.getStderr process
+    ec <- Process.waitExitCode process
+    when (ec /= ExitSuccess)
+      $ throwIO
+      $ BazelError
+      $ "bazelCmd_: Failed running: "
+        <> T.pack (showCommandForUser (bazelBin opts) allArgs)
 
 -- | Continually reads text from the given Handle and outputs it to stderr.
 -- Attempts to drop "INFO:" lines from the output.
@@ -188,7 +188,7 @@ getBazelArgs opts cmd args = do
           <> if isTerm then ["--curses=yes", "--color=yes"] else []
   when (bazelShowCommands opts)
     $ IO.hPutStrLn stderr
-    $ "Running: " ++ Process.showCommandForUser (bazelBin opts) allArgs
+    $ "Running: " ++ showCommandForUser (bazelBin opts) allArgs
   return allArgs
 
 -- | Run "bazel build" with the given arguments.
@@ -254,8 +254,8 @@ fileToHsTargets :: BazelOpts -> FilePath -> IO [Label]
 fileToHsTargets opts file =
       regularFileToHsTargets opts file
     -- TODO(b/143647290): More disciplined error handling.
-    `catch` ( \e@(ErrorCall _) -> do
-                IO.hPutStrLn IO.stderr $ "fileToHsTargets: " ++ show e
+    `catch` ( \(BazelError msg) -> do
+                IO.hPutStrLn IO.stderr $ "fileToHsTargets: " ++ T.unpack msg
                 return []
             )
 

@@ -33,7 +33,9 @@ haskell_library(
         "@stackage//:filepath",
         "@stackage//:process",
         "@stackage//:strict",
+        "@stackage//:text",
         "@stackage//:temporary",
+        "@stackage//:typed-process",
     ],
 )
 
@@ -47,6 +49,7 @@ haskell_binary(
         "@stackage//:optparse-applicative",
         "@stackage//:test-framework",
         "@stackage//:test-framework-hunit",
+        "@stackage//:text",
     ],
 )
 
@@ -721,7 +724,8 @@ hrepl_test(
 
 hrepl_test(
     name = "file_name_test",
-    test_args = ["hrepl/tests/Basic.hs"],
+    # The tests run under a subdirectory.
+    test_args = ["../hrepl/tests/Basic.hs"],
     commands = [":main {OUT}"],
     expected_output = "OK",
 )

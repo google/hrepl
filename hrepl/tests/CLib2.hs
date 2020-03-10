@@ -15,6 +15,4 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 module CLib2 where
 
-import Foreign.Ptr
-
 foreign import ccall clib2 :: IO Int

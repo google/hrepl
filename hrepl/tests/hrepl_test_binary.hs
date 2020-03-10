@@ -12,11 +12,13 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
+{-# LANGUAGE OverloadedStrings #-}
 -- | This binary serves as a template for our tests of hrepl.
 -- For more details, see test.bzl.
 module Main (main) where
 
 import Control.Applicative (many)
+import qualified Data.Text.Lazy as T
 import ReplTestLib
 import Test.Framework
 import Test.Framework.Providers.HUnit
@@ -33,7 +35,8 @@ parseTestArgs = TestArgs
     <$> (TestScript
           <$> many (strOption $ long "arg")
           <*> fmap (flip interpolate)
-              (strOption $ long "script" <> help "Commands to run in hrepl."))
+              (T.pack <$>
+                  strOption (long "script" <> help "Commands to run in hrepl.")))
     <*> (strOption $ long "expected" <> help "Expected output.")
 
 main :: IO ()
@@ -46,9 +49,7 @@ main = do
                 $ hreplTest (taScript testArgs) (taExpected testArgs)
         ]
 
--- | Splices in the input file as a Haskell string expression.
+-- | Splices in the input file as a quoted Haskell string expression.
 -- Replaces the template "{OUT}".
-interpolate :: FilePath -> String -> String
-interpolate f ('{':'O':'U':'T':'}':s) = show f ++ interpolate f s
-interpolate f (s:ss) = s : interpolate f ss
-interpolate _ [] = []
+interpolate :: FilePath -> T.Text -> T.Text
+interpolate f = T.replace "{OUT}" (T.pack $ show f)

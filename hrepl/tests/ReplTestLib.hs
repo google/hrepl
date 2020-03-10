@@ -12,6 +12,7 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 -- | Library for building integration tests for hrepl.
 --
@@ -33,20 +34,16 @@ module ReplTestLib
 
 import Prelude hiding (readFile)
 
-import Control.Exception (bracket)
-import Control.Monad (unless)
 import Bazel(BazelOpts(..), bazelClean, bazelShutdown, defBazelOpts)
 import qualified Bazel.Runfiles as Runfiles
-import System.Directory (getCurrentDirectory, setCurrentDirectory)
+import qualified Data.Text.Lazy as T
+import qualified Data.Text.Lazy.Encoding as T
 import System.Environment (getEnv, lookupEnv)
-import System.Exit (ExitCode(..))
 import System.FilePath ((</>))
-import System.IO (hClose, hPutStrLn)
+import System.IO (hPrint, stderr)
 import System.IO.Strict (readFile)
 import System.IO.Temp (withSystemTempDirectory)
-import System.Process ( CreateProcess(..), StdStream(..), proc, waitForProcess
-                      , withCreateProcess
-                      )
+import qualified System.Process.Typed as Process
 import Test.HUnit (assertEqual)
 import Test.HUnit.Lang (Assertion)
 
@@ -74,7 +71,7 @@ hreplTest t expected = do
 -- Parameters for runTest.
 data TestScript = TestScript
     { tsUserArgs :: [String]
-    , tsStdin :: FilePath -> String  -- The parameter is the result file name
+    , tsStdin :: FilePath -> T.Text  -- The parameter is the result file name
     }
 
 -- | Convenient options for running bazel in isolation.
@@ -98,6 +95,7 @@ testBazelOpts testDirs =
                 , "--symlink_prefix=/"
                 ]
     , bazelShowCommands = True
+    , bazelCwd = Just $ clientDir testDirs
     }
 
 runHrepl :: TestScript -> TestDirs -> IO String
@@ -118,36 +116,25 @@ runHrepl TestScript{..} testDirs = do
                 , "--show-commands"
                 ]
                 ++ tsUserArgs
-        cp = (proc hrepl args)
-                { cwd = Just (clientDir testDirs)
-                -- TODO: don't pass PATH through.
-                -- It's currently needed for ghc_bindist to find the
-                -- `python` executable.
-                , env = Just [("HOME", outputDir testDirs), ("PATH", path)]
-                , std_in = CreatePipe
-                }
+        -- Uses a distinct explicit result file instead of stdout or stderr.
+        -- Both of these are polluted by hrepl, bazel, and ghci.
+        output = outputDir testDirs </> "result"
+        input = T.encodeUtf8 $ tsStdin output <> "\n:quit\n"
+        cp = Process.setEnv [("HOME", outputDir testDirs), ("PATH", path)]
+                -- Run within a subdirectory, to test that hrepl isn't
+                -- relying on being run from the project root.
+                $ Process.setWorkingDir (clientDir testDirs </> "src")
+                $ Process.setStdin (Process.byteStringInput input)
+                $ Process.proc hrepl args
     -- Clean up any previous builds (such as when sharing HREPL_OUTPUT_BASE)
-    bracket getCurrentDirectory setCurrentDirectory
-        $ const $ do
-            setCurrentDirectory (clientDir testDirs)
-            bazelClean bazelOpts
-    let output = outputDir testDirs </> "result"
+    bazelClean bazelOpts
     -- If the output file already exists, overwrite any previous values.
     -- If it doesn't exist, prevent confusing "file not found" errors in case the
     -- test fails and doesn't append anything to it.
     writeFile output ""
-    withCreateProcess cp $ \(Just stdin) _ _ ph -> do
-        -- Uses a distinct explicit result file instead of stdout or stderr.
-        -- Both of these are polluted by hrepl, bazel, and ghci.
-        hPutStrLn stdin (tsStdin output)
-        hPutStrLn stdin ":quit"
-        hClose stdin
-
-        exitCode <- waitForProcess ph
-        unless (exitCode == ExitSuccess) $
-            error $ "Hrepl failed with: " ++ show exitCode
-        -- Shut down the async bazel process to prevent test flakiness
-        -- and zombie bazel processes.
-        bazelShutdown bazelOpts
-
-        readFile output
+    hPrint stderr cp
+    Process.runProcess_ cp
+    -- Shut down the async bazel process to prevent test flakiness
+    -- and zombie bazel processes.
+    bazelShutdown bazelOpts
+    readFile output

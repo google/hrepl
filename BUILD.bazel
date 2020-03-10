@@ -18,8 +18,10 @@ haskell_library(
         "@stackage//:filepath",
         "@stackage//:haskell-src-exts",
         "@stackage//:process",
+        "@stackage//:stm",
         "@stackage//:text",
         "@stackage//:transformers",
+        "@stackage//:typed-process",
     ],
 )
 

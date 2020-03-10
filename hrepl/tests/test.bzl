@@ -75,6 +75,6 @@ def hrepl_test(name="", test_args=[], commands=[], expected_output="", tags=[], 
         test_args = test_args,
         commands = commands,
         expected_output = expected_output,
-        tags = tags + ["hrepl_test"],
+        tags = tags + ["hrepl_test", "manual"],
         **kwargs
     )

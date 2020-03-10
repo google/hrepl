@@ -19,6 +19,7 @@ haskell_test(
     srcs = ["ExecutionRootTest.hs"],
     deps = [
         ":execution_root",
+        "@stackage//:base",
         "@stackage//:HUnit",
         "@stackage//:test-framework-hunit",
         "@stackage//:test-framework",

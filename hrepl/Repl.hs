@@ -44,7 +44,7 @@ import System.Posix.Files.ByteString (createSymbolicLink)
 
 import Bazel (BazelOpts (..), bazelQuery, fileToHsTargets)
 import qualified Bazel.Query as Q
-import BuildOutput (collectBuildOutputs)
+import Bazel.BuildOutput (collectBuildOutputs)
 import RuleInfo
     ( BuildOptions(..)
     , buildDependentPackages

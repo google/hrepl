@@ -71,7 +71,7 @@ import Bazel.Name
     )
 import Bazel
 import qualified Bazel.Query as Q
-import BuildOutput
+import Bazel.BuildOutput
     ( BuildOutput
     , collectBuildOutputs
     , outputGroup

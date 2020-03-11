@@ -6,7 +6,7 @@ haskell_library(
     srcs = ["ExecutionRoot.hs"],
     visibility = ["//visibility:public"],
     deps = [
-        "//:bazel",
+        "//bazel",
         "@stackage//:base",
         "@stackage//:extra",
         "@stackage//:filepath",

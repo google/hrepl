@@ -3,8 +3,6 @@ load("@rules_haskell//haskell:defs.bzl", "haskell_binary", "haskell_library", "h
 haskell_binary(
     name = "hrepl",
     srcs = [
-        "BuildOutput.hs",
-        "RuleInfo.hs",
         "Repl.hs",
         "repl_main.hs",
     ],
@@ -12,11 +10,10 @@ haskell_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":ModuleName",
-        "//:bazel",
-        "//hrepl/RuleInfo:execution_root",
-        "@rules_haskell//rule_info:rule_info_haskell_proto",
+        "//bazel",
+        "//rule_info",
+        "//rule_info/RuleInfo:execution_root",
         "@stackage//:base",
-        "@stackage//:bytestring",
         "@stackage//:containers",
         "@stackage//:directory",
         "@stackage//:filepath",

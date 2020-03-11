@@ -1,0 +1,38 @@
+load("@rules_haskell//haskell:defs.bzl", "haskell_library", "haskell_test")
+haskell_library(
+    name = "bazel",
+    srcs = [
+        "Bazel.hs",
+        "Bazel/Name.hs",
+        "Bazel/BuildOutput.hs",
+        "Bazel/Query.hs",
+    ],
+    compiler_flags = ["-XScopedTypeVariables"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@stackage//:async",
+        "@stackage//:base",
+        "@stackage//:bytestring",
+        "@stackage//:containers",
+        "@stackage//:directory",
+        "@stackage//:filepath",
+        "@stackage//:haskell-src-exts",
+        "@stackage//:process",
+        "@stackage//:stm",
+        "@stackage//:text",
+        "@stackage//:transformers",
+        "@stackage//:typed-process",
+    ],
+)
+
+haskell_test(
+    name = "QueryTest",
+    srcs = ["Bazel/QueryTest.hs"],
+    deps = [
+        ":bazel",
+        "@stackage//:HUnit",
+        "@stackage//:base",
+        "@stackage//:test-framework",
+        "@stackage//:test-framework-hunit",
+    ],
+)

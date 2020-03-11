@@ -123,7 +123,7 @@ runHrepl TestScript{..} testDirs = do
         cp = Process.setEnv [("HOME", outputDir testDirs), ("PATH", path)]
                 -- Run within a subdirectory, to test that hrepl isn't
                 -- relying on being run from the project root.
-                $ Process.setWorkingDir (clientDir testDirs </> "src")
+                $ Process.setWorkingDir (clientDir testDirs </> "hrepl")
                 $ Process.setStdin (Process.byteStringInput input)
                 $ Process.proc hrepl args
     -- Clean up any previous builds (such as when sharing HREPL_OUTPUT_BASE)

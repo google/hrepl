@@ -25,7 +25,7 @@ haskell_library(
         "//hrepl",
     ],
     deps = [
-        "//:bazel",
+        "//bazel",
         "@rules_haskell//tools/runfiles",
         "@stackage//:HUnit",
         "@stackage//:base",

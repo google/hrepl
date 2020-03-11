@@ -30,7 +30,7 @@
 --                (liftA2 (,) outputLabel perLabelOutput)
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE OverloadedStrings #-}
-module BuildOutput
+module Bazel.BuildOutput
     ( BuildOutput
     , outputGroup
     , defaultOutputGroup

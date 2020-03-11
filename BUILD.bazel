@@ -1,41 +1,4 @@
-load("@rules_haskell//haskell:defs.bzl", "haskell_library", "haskell_test")
 load("@rules_haskell//haskell:protobuf.bzl", "haskell_proto_toolchain")
-
-haskell_library(
-    name = "bazel",
-    srcs = [
-        "src/Bazel.hs",
-        "src/Bazel/Name.hs",
-        "src/Bazel/Query.hs",
-    ],
-    compiler_flags = ["-XScopedTypeVariables"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@stackage//:async",
-        "@stackage//:base",
-        "@stackage//:bytestring",
-        "@stackage//:containers",
-        "@stackage//:filepath",
-        "@stackage//:haskell-src-exts",
-        "@stackage//:process",
-        "@stackage//:stm",
-        "@stackage//:text",
-        "@stackage//:transformers",
-        "@stackage//:typed-process",
-    ],
-)
-
-haskell_test(
-    name = "QueryTest",
-    srcs = ["src/Bazel/QueryTest.hs"],
-    deps = [
-        ":bazel",
-        "@stackage//:HUnit",
-        "@stackage//:base",
-        "@stackage//:test-framework",
-        "@stackage//:test-framework-hunit",
-    ],
-)
 
 haskell_proto_toolchain(
     name = "proto_toolchain",

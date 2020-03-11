@@ -1,0 +1,22 @@
+load("@rules_haskell//haskell:defs.bzl", "haskell_library")
+
+haskell_library(
+    name = "rule_info",
+    srcs = [
+        "RuleInfo.hs",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//bazel",
+        "//rule_info/RuleInfo:execution_root",
+        "@rules_haskell//rule_info:rule_info_haskell_proto",
+        "@stackage//:base",
+        "@stackage//:bytestring",
+        "@stackage//:containers",
+        "@stackage//:directory",
+        "@stackage//:filepath",
+        "@stackage//:microlens",
+        "@stackage//:proto-lens",
+        "@stackage//:text",
+    ],
+)

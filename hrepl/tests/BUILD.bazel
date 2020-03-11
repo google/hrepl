@@ -520,7 +520,7 @@ hrepl_test(
     test_args = [
         "//hrepl/tests:ProtoLib",
     ],
-    commands = ["apendFile {OUT} (show test)"],
+    commands = ["appendFile {OUT} (show test)"],
     expected_output = "{}",  # The proto text format for an empty message
 )
 

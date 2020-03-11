@@ -48,6 +48,9 @@ import qualified Data.Text as Text
 import Data.Text (Text)
 import Bazel
 import Bazel.Name (Label)
+import System.Directory (doesFileExist)
+import System.IO (hPutStr, stderr)
+import System.Exit (exitFailure)
 
 -- | An abstract data type representing build process outputs that clients
 -- can request.
@@ -89,7 +92,17 @@ outputLabel = BuildOutput
 
 -- | An action to run for each entry after building it.
 outputFileContents :: (BinDir -> Label -> FilePath) -> BuildOutput B.ByteString
-outputFileContents path = BuildOutput Set.empty $ \b l -> B.readFile $ path b l
+outputFileContents path = BuildOutput Set.empty $ \b l -> do
+    let f = path b l
+    exists <- doesFileExist f
+    if exists
+        then B.readFile f
+        else do
+            hPutStr stderr $ unlines
+                [ "Error: Unrecognized target " ++ show l
+                , "Could not read " ++ show f ++ "."
+                ]
+            exitFailure
 
 -- | Build a collection of targets, and run the given action for each target.
 --

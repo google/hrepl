@@ -66,20 +66,47 @@ import ModuleName
     , ParseResult(..)
     , prettyPrint
     )
-import Bazel.Name (Label)
+import Bazel.Name (Label, PackageName)
 
---- | Expands the given targets to include all in-between targets.
----
---- This is needed so all those targets are managed by GHCi by source. Otherwise
---- code changes to intermediate targets wouldn't be picked up on reload.
-getAllIntermediateTargets :: BazelOpts -> [Label] -> IO [Label]
-getAllIntermediateTargets bazelOpts targetLabels =
+-- | Expands the given targets to include all in-between targets.
+-- Also includes any haskell_library dependencies that are under one of the
+-- "interpretDeps" packages.
+--
+-- This is needed so all those targets are managed by GHCi by source. Otherwise
+-- code changes to intermediate targets wouldn't be picked up on reload.
+getAllIntermediateTargets :: BazelOpts -> [PackageName] -> [Label] -> IO [Label]
+getAllIntermediateTargets bazelOpts interpretDeps targetLabels =
     bazelQuery bazelOpts queryAllPaths
   where
     queryAllPaths =
         let targetQueries = map Q.labelToQuery targetLabels
          in Q.letIn ("ts", Q.union targetQueries) $
-              Q.allpaths (Q.var "ts") (Q.var "ts")
+            Q.letIn ("tds", Q.var "ts"
+                              Q.<+> packageNameFilter interpretDeps
+                                      (Q.kind "haskell_library"
+                                          (Q.deps (Q.var "ts")))) $
+            Q.allpaths (Q.var "tds") (Q.var "tds")
+
+-- | Returns a query function that will only match targets in the given
+-- packages.  If the list of directories is empty, the result will always
+-- evaluate to the empty query.
+--
+-- Assumes that the given paths are relative to the current directory.
+packageNameFilter :: [PackageName] -> Q.Query -> Q.Query
+packageNameFilter [] = const Q.empty
+packageNameFilter ps =
+    -- A naive implementation would be: "$ds ^ (PKG/... + PKG/...)"
+    -- However, PKG/... evaluates every BUILD file in all of PKG's
+    -- subdirectories, which is too slow:
+    -- https://docs.bazel.build/versions/master/query.html#filter
+    -- Instead, we'll use "filter(PATTERN, $ds)"
+    -- where PATTERN is "PKG(/|:)|PKG(/|:)"
+    let packagePattern =
+          "'"
+          <> Text.intercalate "|"
+                [Text.pack (show p ++ "(/|:)") | p <- ps]
+          <> "'"
+    in Q.filterQ packagePattern
 
 -- | Use Bazel to expand the given list of target patterns (e.g. potentially
 -- including wildcards) into a list of labels of single targets.
@@ -101,6 +128,7 @@ data ReplOptions = ReplOptions
   { replBazelOpts :: BazelOpts
   , replCompiledTargets :: [String]
   , replRtsOpts :: String
+  , replInterpretDeps :: [PackageName]
   , replUserArgs :: [String]
   , replTargets :: [String]
   } deriving Show
@@ -111,6 +139,7 @@ runWith ReplOptions
     { replBazelOpts = bazelOpts
     , replTargets = targets
     , replRtsOpts = rtsOpts
+    , replInterpretDeps = interpretDeps
     , replUserArgs = userArgs
     , replCompiledTargets = compiledTargets } = do
     -- Build the GHC config first.  It will trigger the GHC repository rule,
@@ -118,7 +147,7 @@ runWith ReplOptions
     ghcConfig <- getGhcConfig bazelOpts
 
     targetLabels <- bazelExpandTargetsToLabels bazelOpts targets
-    allTargets <- getAllIntermediateTargets bazelOpts targetLabels
+    allTargets <- getAllIntermediateTargets bazelOpts interpretDeps targetLabels
     compiledLabels <- bazelExpandTargetsToLabels bazelOpts compiledTargets
 
     -- The "execution root" directory contains all the source and output

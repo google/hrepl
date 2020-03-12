@@ -1,5 +1,11 @@
 """A macro for testing hrepl."""
 
+# Tags to avoid automatically building certain test targets which intentionally
+# don't build.
+DO_NOT_BUILD = [
+    "manual",
+]
+
 _hrepl_test_binary = "//hrepl/tests:hrepl_test_binary"
 
 def _quote(s):

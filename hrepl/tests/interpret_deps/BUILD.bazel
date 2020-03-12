@@ -1,0 +1,17 @@
+load("@rules_haskell//haskell:defs.bzl", "haskell_library")
+load("//hrepl/tests:test.bzl", "DO_NOT_BUILD")
+
+haskell_library(
+    name = "ReloadOfBroken",
+    srcs = ["ReloadOfBroken.hs"],
+    # Note: this file intentionally doesn't compile.
+    tags = DO_NOT_BUILD,
+)
+
+haskell_library(
+    name = "ReloadOfBrokenDependency",
+    srcs = ["ReloadOfBrokenDependency.hs"],
+    # Depends on a target that doesn't compile:
+    tags = DO_NOT_BUILD,
+    deps = [":ReloadOfBroken"],
+)

@@ -20,7 +20,9 @@ For more information, see ...
 module Main (main)  where
 
 import Data.List (isPrefixOf, partition)
+import qualified Data.Text as Text
 import Bazel (defBazelOpts, BazelOpts(..))
+import Bazel.Name (parsePackageName, PackageName)
 import Repl (runWith, ReplOptions(..))
 import Options.Applicative
 
@@ -33,12 +35,12 @@ data MainOptions = MainOptions
 parseOptions :: Parser MainOptions
 parseOptions =
     MainOptions
-        <$> parseGhciOptions
+        <$> parseReplOptions
 
-parseGhciOptions :: Parser ReplOptions
-parseGhciOptions =
+parseReplOptions :: Parser ReplOptions
+parseReplOptions =
     liftA2 uncurry
-        (ReplOptions <$> bazelOpts <*> packageIds <*> rtsOpts)
+        (ReplOptions <$> bazelOpts <*> packageIds <*> rtsOpts <*> interpretDeps)
         ghcFlagsAndTargets
 
 ghcFlagsAndTargets :: Parser ([String], [String])
@@ -122,6 +124,14 @@ rtsOpts = strOption
               <> metavar "OPTS"
               <> help ("RTS options to be used for running the target. "
                        ++ "Space-separated.")
+
+interpretDeps :: Parser [PackageName]
+interpretDeps = many
+    $ fmap (parsePackageName . Text.pack)
+    $ strOption
+    $ long "interpret-deps"
+    <> metavar "PACKAGE"
+    <> help "Also interpret any dependencies under the given Blaze package."
 
 main :: IO ()
 main = do

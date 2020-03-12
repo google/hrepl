@@ -61,8 +61,10 @@ For more information about `hrepl`'s command-line flags, run `hrepl --help`.
 
 ### Compiled Dependencies
 
-You may also load modules from the dependencies of your target(s), using
-`:module` or `import`. For example:
+
+By default, `hrepl` will compile any dependencies of your target(s) with Bazel
+before starting the interpreter. You may load those dependencies with `:module`
+or `import`. For example:
 
 ```shell
 $ hrepl //some:library  # depends on the "split" package
@@ -70,21 +72,38 @@ Prelude Library> import Data.List.Split
 Prelude Library Data.List.Split>
 ```
 
-`hrepl` compiles those dependencies with `bazel` before starting the
-interpreter. It behaves this way because it's not feasible to load every
-transitive dependency (including third-party packages) into GHCi at once; and
-due to the way Bazel works, there isn't always a clear distinction between
-"installed" and "local" packages.
-
-As a consequence, the interpreter is not aware of the source files of
-dependencies, and will not pick up changes to them on `:reload`. Instead, you
-will need to `:quit` and restart `hrepl`. The same is true for changes to
-`BUILD` or `.bzl` files that affect your targets.
+However, since those modules are compiled, the interpreter will not be aware of
+the source files of those dependencies, and will not pick up changes to them on
+`:reload`. Instead, you will need to `:quit` and restart `gghci`. The same is
+true for changes to `BUILD` and `.bzl` files that affect your targets.
 
 Note: `hrepl` will not let you load (compiled) modules from transitive dependencies
 automatically. This behavior is similar to the build rules, which only expose
 modules from targets listed directly in their `deps`.  To expose a transitive
 dependency in the interpreter, pass `--package //label/of:dep`.
+
+### Interpreted Dependencies
+
+Alternately, you can tell `hrepl` to interpret (not compile) certain
+dependencies. The `--interpret-deps=PACKAGE` flag specifies any dependencies
+that are under the given `PACKAGE` (either directly, or as a subpackage). For
+example:
+
+```shell
+$ hrepl //some/project:target --interpret-deps=//some/project
+```
+
+That will load not just `:target` into the interpreter, but also any source
+files from dependencies of `:target` that are in `some/project/BUILD` or
+any other `BUILD` file in a subdirectory of `some/project`.
+
+You may pass the flag more than once to combine the dependencies from different
+subdirectories.
+
+Warning: `hrepl` will combine the `compiler_flags` attributes of interpreted targets
+into a single list, and apply all of them to each source file it loads. If two
+targets have conflicting `compiler_flags`, for example enabling and disabling the same
+GHC extension, it may not be possible to interpret both of them at once.
 
 ### Multiple build targets
 

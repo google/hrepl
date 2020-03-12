@@ -13,6 +13,7 @@ set -x
 bazel build "$@"
 
 OUTPUT="$(mktemp -d)"
+echo $OUTPUT
 trap "bazel --output_base=$OUTPUT/output-base clean --expunge && rm -rf $OUTPUT" EXIT
 
 # Now run each test in sequence, using the same output directory to share the workspace

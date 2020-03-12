@@ -9,13 +9,7 @@
 
 load("@rules_haskell//haskell:defs.bzl", "haskell_binary", "haskell_library", "ghc_plugin")
 load("@rules_haskell//haskell:protobuf.bzl", "haskell_proto_library")
-load(":test.bzl", "hrepl_test")
-
-# Tags to avoid automatically building certain test targets which intentionally
-# don't build.
-DO_NOT_BUILD = [
-    "manual",
-]
+load(":test.bzl", "DO_NOT_BUILD", "hrepl_test")
 
 haskell_library(
     name = "ReplTestLib",
@@ -471,6 +465,23 @@ hrepl_test(
     test_args = [
         "//hrepl/tests:ReloadOfBroken",
         "//hrepl/tests:ReloadOfBrokenDependency",
+    ],
+    commands = [
+        "appendFile {OUT} test",
+        # "Fix" the file by setting a necessary LANGUAGE pragma.
+        ":set -XOverloadedStrings",
+        ":reload",
+        "appendFile {OUT} (testDep ++ test)",
+    ],
+    expected_output = "OK-depOK",  # Printed only once after reload
+)
+
+hrepl_test(
+    name = "interpret_deps_test",
+    test_args = [
+        "//hrepl/tests/interpret_deps:ReloadOfBrokenDependency",
+        # Interpret :ReloadOfBroken too, so :reload will pick it up.
+        "--interpret-deps=//hrepl/tests/interpret_deps",
     ],
     commands = [
         "appendFile {OUT} test",

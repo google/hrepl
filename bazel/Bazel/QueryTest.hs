@@ -73,29 +73,37 @@ main =
         let q1 = fun "attr" [intArg 42, "some_arg"]
             q2 = strFun "kind" ["haskell_", queryArg q1]
         assertRender q2 "kind(haskell_, attr(42, some_arg))",
-      testCase "combine" $ do
+      testGroup "combine" $
         let q1 = "//some/path/..."
             q2 = "//some/path/internal/..."
-        assertRender (q1 <^> q2)
-          "(//some/path/... ^ //some/path/internal/...)"
-        assertRender (q1 <+> q2)
-          "(//some/path/... + //some/path/internal/...)"
-        assertRender (q1 <-> q2)
-          "(//some/path/... - //some/path/internal/...)",
+         in [ testCase "intersection" $
+                assertRender (q1 <^> q2)
+                  "(//some/path/... ^ //some/path/internal/...)",
+              testCase "union" $
+                assertRender (q1 <+> q2)
+                  "(//some/path/... + //some/path/internal/...)",
+              testCase "except" $
+                assertRender (q1 <-> q2)
+                  "(//some/path/... - //some/path/internal/...)"
+            ],
       testCase "let-in" $ do
         let q =
               letIn ("v", "foo/...") $
                 allpaths (var "v") "//common" <^> var "v"
         assertRender q
           "let v = foo/... in (allpaths($v, //common) ^ $v)",
-      testCase "intersection" $ do
-        assertEmpty (intersection [])
-        assertRender (intersection [word "x", word "y", word "z"])
-            "(y ^ (z ^ x))",
-      testCase "union" $ do
-        assertEmpty (union [])
-        assertRender (union [word "x", word "y", word "z"])
-            "(y + (z + x))",
+      testGroup "intersection"
+        [ testCase "empty" $ assertEmpty (intersection []),
+          testCase "group of 3" $
+            assertRender (intersection [word "x", word "y", word "z"])
+              "(y ^ (z ^ x))"
+        ],
+      testGroup "union"
+        [ testCase "empty" $ assertEmpty (union []),
+          testCase "group of 3" $
+            assertRender (union [word "x", word "y", word "z"])
+              "(y + (z + x))"
+        ],
       testCase "labelToQuery" $ do
         let label = parseLabel "//some/path:target"
         (assertRender . labelToQuery) label "//some/path:target",
@@ -104,33 +112,47 @@ main =
 
 emptyQueryTests :: Test
 emptyQueryTests = testGroup "empty"
-  [ testCase "union" $ do
-      assertEmpty (empty <+> empty)
-      assertRender (empty <+> word "x") "x"
-      assertRender ("x" <+> empty) "x"
-      assertRender (("x" <+> empty) <+> "y") "(x + y)"
-      assertRender ("x" <+> (empty <+> "y")) "(x + y)",
-    testCase "intersect" $ do
-      assertEmpty (empty <^> empty)
-      assertEmpty (empty <^> "x")
-      assertEmpty ("x" <^> empty)
-      assertEmpty (("x" <^> empty) <^> "y")
-      assertEmpty ("x" <^> (empty <^> "y")),
-    testCase "except" $ do
-      assertEmpty (empty <-> empty)
-      assertEmpty (empty <-> word "x")
-      assertRender ("x" <-> empty) "x"
-      assertRender (("x" <-> empty) <-> "y") "(x - y)"
-      assertRender ("x" <-> ("y" <-> empty)) "(x - y)",
+  [ testGroup "union"
+      [ testCase "self identity" $ assertEmpty (empty <+> empty),
+        testCase "left identity" $ assertRender (empty <+> word "x") "x",
+        testCase "right identity" $ assertRender ("x" <+> empty) "x",
+        testCase "left-associated" $
+          assertRender (("x" <+> empty) <+> "y") "(x + y)",
+        testCase "right-associated" $
+          assertRender ("x" <+> (empty <+> "y")) "(x + y)"
+      ],
+    testGroup "intersect"
+      [ testCase "self identity" $ assertEmpty (empty <^> empty),
+        testCase "left empty" $ assertEmpty (empty <^> "x"),
+        testCase "right empty" $ assertEmpty ("x" <^> empty),
+        testCase "left-associated" $ assertEmpty (("x" <^> empty) <^> "y"),
+        testCase "right-associated" $ assertEmpty ("x" <^> (empty <^> "y"))
+      ],
+    testGroup "except"
+      [ testCase "self identity" $ assertEmpty (empty <-> empty),
+        testCase "left empty" $ assertEmpty (empty <-> word "x"),
+        testCase "right identity" $ assertRender ("x" <-> empty) "x",
+        testCase "left-associated" $
+          assertRender (("x" <-> empty) <-> "y") "(x - y)",
+        testCase "right-associated" $
+          assertRender ("x" <-> ("y" <-> empty)) "(x - y)"
+      ],
     testCase "fun" $
       assertEmpty $ fun "foo" [intArg 42, queryArg empty],
-    testCase "bind" $ do
-      assertEmpty $ letIn ("v", empty) (var "v")
-      assertRender (letIn ("v", empty) $ letIn ("w", "x") (var "w"))
-        "let w = x in $w"
-      assertRender (letIn ("v", empty) $ letIn ("w", "x")
-                        (var "w" <+> var "v"))
-        "let w = x in $w"
-      assertEmpty $ letIn ("v", "x") empty
-      assertEmpty $ letIn ("v", "x" <^> empty) (var "v")
+    testGroup "bind"
+      [ testCase "binding to empty" $
+          assertEmpty $ letIn ("v", empty) (var "v"),
+        testCase "unused binding" $
+          assertRender
+            (letIn ("v", empty) $ letIn ("w", "x") (var "w"))
+            "let w = x in $w",
+        testCase "union with binding to empty" $
+          assertRender
+            (letIn ("v", empty) $ letIn ("w", "x") (var "w" <+> var "v"))
+            "let w = x in $w",
+        testCase "unused binding, empty result" $
+          assertEmpty $ letIn ("v", "x") empty,
+        testCase "binding to intersection with empty" $
+          assertEmpty $ letIn ("v", "x" <^> empty) (var "v")
+      ]
   ]

@@ -85,6 +85,9 @@ filePathFlags =
     FPF "-pgma",
     FPF "-pgmc",
     FPF "-pgml",
+    FPF "-opta--warning-suppression-mappings",
+    FPF "-optc--warning-suppression-mappings",
+    FPF "-optcxx--warning-suppression-mappings",
     FPFPrefixed "-optP-isystem" "-optP",
     FPFPrefixed "-optP-iquote" "-optP"
   ]
